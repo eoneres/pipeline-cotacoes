@@ -1,0 +1,40 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #f5f5f5;
+}
+
+/* Responsividade para gráficos */
+@media (max-width: 768px) {
+    .recharts-wrapper {
+        font-size: 10px;
+    }
+
+    .recharts-legend-item-text {
+        font-size: 10px !important;
+    }
+
+    .recharts-xAxis text,
+    .recharts-yAxis text {
+        font-size: 9px !important;
+    }
+}
+
+/* Scroll suave */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Melhorar tooltips */
+.recharts-tooltip-wrapper {
+    z-index: 1000;
+}

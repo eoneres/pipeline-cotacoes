@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Model para armazenar as cotações
+model Cotacao {
+  id        String   @id @default(cuid())
+  moeda     String
+  bid       Float
+  ask       Float
+  high      Float
+  low       Float
+  varBid    Float
+  pctChange Float
+  timestamp DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([moeda, timestamp])
+  @@index([moeda, timestamp])
+}
+
+// Model para controle das coletas
+model ColetaLog {
+  id         String   @id @default(cuid())
+  moeda      String
+  status     String
+  registros  Int      @default(0)
+  error      String?
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  createdAt  DateTime @default(now())
+}
+
+// Model para configurações
+model Configuracao {
+  id        String   @id @default(cuid())
+  chave     String   @unique
+  valor     String
+  descricao String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Model para alertas
+model Alerta {
+  id          String   @id @default(cuid())
+  nome        String
+  moeda       String
+  tipo        String   // 'above', 'below', 'percent_change'
+  valor       Float
+  ativo       Boolean  @default(true)
+  canal       String   // 'console', 'email', 'webhook'
+  destinatario String?
+  ultimaNotificacao DateTime?
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  
+  @@index([moeda, ativo])
+}
+
+// Model para notificações (sem Json para SQLite)
+model Notificacao {
+  id          String   @id @default(cuid())
+  alertaId    String
+  tipo        String
+  mensagem    String
+  dados       String?  // Mudado de Json para String (armazenar JSON como texto)
+  status      String   // 'sent', 'failed'
+  erro        String?
+  enviadoEm   DateTime @default(now())
+  
+  @@index([alertaId])
+}
