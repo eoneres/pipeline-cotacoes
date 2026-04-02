@@ -3,12 +3,11 @@ const apiService = require('../services/apiService');
 const { prisma } = require('../config/database');
 const logger = require('../config/logger');
 
-class ColetaJob {
-    constructor() {
-        this.isRunning = false;
-        this.schedule = process.env.COLETA_CRON_SCHEDULE || '*/5 * * * *';
-        this.moedas = (process.env.MOEDAS || 'USD-BRL,EUR-BRL').split(',');
-    }
+const coletaJob = {
+    isRunning: false,
+    schedule: process.env.COLETA_CRON_SCHEDULE || '*/5 * * * *',
+    moedas: (process.env.MOEDAS || 'USD-BRL,EUR-BRL').split(','),
+    task: null,
 
     start() {
         if (this.schedule && this.schedule !== '') {
@@ -25,14 +24,14 @@ class ColetaJob {
         } else {
             logger.warn('⚠️ Schedule de coleta vazio. Job não iniciado.');
         }
-    }
+    },
 
     stop() {
         if (this.task) {
             this.task.stop();
             logger.info('⏹️ Job de coleta parado');
         }
-    }
+    },
 
     async executarColeta() {
         if (this.isRunning) {
@@ -68,7 +67,7 @@ class ColetaJob {
         } finally {
             this.isRunning = false;
         }
-    }
+    },
 
     async coletarTodasMoedas() {
         const resultados = [];
@@ -77,8 +76,6 @@ class ColetaJob {
             try {
                 logger.debug(`🌐 Coletando cotação para ${moeda}`);
                 const dados = await apiService.getCotacoesAtuais(moeda);
-
-                logger.debug(`📦 Resposta da API para ${moeda}:`, JSON.stringify(dados).substring(0, 200));
 
                 if (dados && dados[moeda]) {
                     const cotacao = dados[moeda];
@@ -102,21 +99,17 @@ class ColetaJob {
                 }
             } catch (error) {
                 logger.error(`❌ Erro ao coletar ${moeda}: ${error.message}`);
-                if (error.response) {
-                    logger.error(`Status: ${error.response.status}, Data:`, error.response.data);
-                }
             }
         }
 
         return resultados;
-    }
+    },
 
     async salvarResultados(resultados) {
         let salvos = 0;
 
         for (const resultado of resultados) {
             try {
-                // Verificar se já existe
                 const exists = await prisma.cotacao.findFirst({
                     where: {
                         moeda: resultado.moeda,
@@ -140,7 +133,7 @@ class ColetaJob {
 
         logger.info(`💾 Salvos: ${salvos} de ${resultados.length}`);
         return salvos;
-    }
+    },
 
     async criarLogInicio() {
         try {
@@ -156,7 +149,7 @@ class ColetaJob {
             logger.error(`❌ Erro ao criar log: ${error.message}`);
             return null;
         }
-    }
+    },
 
     async atualizarLogSucesso(logId, registros) {
         if (!logId) return;
@@ -173,7 +166,7 @@ class ColetaJob {
         } catch (error) {
             logger.error(`❌ Erro ao atualizar log: ${error.message}`);
         }
-    }
+    },
 
     async atualizarLogErro(logId, errorMessage) {
         if (!logId) return;
@@ -191,6 +184,6 @@ class ColetaJob {
             logger.error(`❌ Erro ao atualizar log: ${error.message}`);
         }
     }
-}
+};
 
-module.exports = new ColetaJob();
+module.exports = coletaJob;

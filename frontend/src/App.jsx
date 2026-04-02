@@ -3,6 +3,8 @@ import AlertaManager from './components/AlertaManager';
 import ForecastPanel from './components/ForecastPanel';
 import PriceChart from './components/PriceChart';
 import PerformanceMetrics from './components/PerformanceMetrics';
+import WebSocketStatus from './components/WebSocketStatus';
+import useWebSocket from './hooks/useWebSocket';
 import {
     formatBRL,
     formatPercent,
@@ -28,6 +30,67 @@ function App() {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [chartType, setChartType] = useState('line');
     const [estatisticas, setEstatisticas] = useState(null);
+
+    // WebSocket para atualizações em tempo real
+    const handleWebSocketMessage = (message) => {
+        if (message.tipo === 'nova_cotacao') {
+            // Atualizar a cotação específica
+            const novaCotacao = message.dados;
+            setDados(prev => ({
+                ...prev,
+                cotacoes: {
+                    ...prev.cotacoes,
+                    [novaCotacao.moeda]: {
+                        bid: novaCotacao.bid,
+                        ask: novaCotacao.ask,
+                        high: novaCotacao.high,
+                        low: novaCotacao.low,
+                        pctChange: novaCotacao.pctChange,
+                        timestamp: novaCotacao.timestamp
+                    }
+                }
+            }));
+
+            // Mostrar notificação visual
+            const variacao = novaCotacao.pctChange;
+            const sinal = variacao >= 0 ? '▲' : '▼';
+            const cor = variacao >= 0 ? '#10b981' : '#ef4444';
+
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        border-left: 4px solid ${cor};
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 1000;
+        animation: slideIn 0.3s ease;
+        font-size: 14px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      `;
+            notification.innerHTML = `
+        <strong style="color: ${cor}">${sinal} ${novaCotacao.moeda}</strong><br>
+        <span style="font-size: 16px; font-weight: bold;">R$ ${novaCotacao.bid.toFixed(4)}</span><br>
+        <span style="color: ${cor}">Variação: ${sinal} ${Math.abs(variacao).toFixed(2)}%</span>
+      `;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 5000);
+        } else if (message.tipo === 'coleta_finalizada') {
+            // Recarregar dados após coleta
+            carregarDados();
+            carregarHistorico(selectedMoeda);
+            carregarEstatisticas(selectedMoeda);
+        }
+    };
+
+    const { isConnected } = useWebSocket(handleWebSocketMessage);
 
     useEffect(() => {
         carregarDados();
@@ -149,7 +212,6 @@ function App() {
     };
 
     const getVariacaoClasse = (variacao) => {
-        // Garantir que variacao é número
         const numVariacao = typeof variacao === 'string' ? parseFloat(variacao) : (variacao || 0);
         if (numVariacao > 0) return { bg: '#d1fae5', color: '#065f46', icon: '▲' };
         if (numVariacao < 0) return { bg: '#fee2e2', color: '#991b1b', icon: '▼' };
@@ -189,7 +251,28 @@ function App() {
                             <h1 style={{ margin: 0, fontSize: '28px' }}>📊 Pipeline de Cotações</h1>
                             <p style={{ margin: '5px 0 0', opacity: 0.9 }}>Monitoramento de moedas em tempo real</p>
                         </div>
-                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {/* Indicador WebSocket */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                background: isConnected ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                                padding: '4px 12px',
+                                borderRadius: '20px',
+                                marginRight: '5px'
+                            }}>
+                                <div style={{
+                                    width: '10px',
+                                    height: '10px',
+                                    borderRadius: '50%',
+                                    background: isConnected ? '#10b981' : '#ef4444',
+                                    animation: isConnected ? 'pulse 1.5s infinite' : 'none'
+                                }} />
+                                <span style={{ fontSize: '12px' }}>
+                                    {isConnected ? '📡 Tempo Real' : '🔄 Reconectando...'}
+                                </span>
+                            </div>
                             <button
                                 onClick={dispararColetaManual}
                                 style={{
@@ -381,6 +464,7 @@ function App() {
                         <div style={{ marginBottom: '30px' }}>
                             <h2 style={{ marginBottom: '20px', color: '#374151', display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span>📈</span> Cotações em Tempo Real
+                                {isConnected && <span style={{ fontSize: '12px', background: '#10b98120', padding: '2px 8px', borderRadius: '20px', color: '#10b981' }}>● Ao vivo</span>}
                             </h2>
                             <div style={{
                                 display: 'grid',
@@ -692,6 +776,43 @@ function App() {
                     <ForecastPanel moeda={selectedMoeda} />
                 )}
             </div>
+
+            {/* Componente de status WebSocket */}
+            <WebSocketStatus />
+
+            {/* CSS para animações */}
+            <style>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+
+        @keyframes slideOut {
+          from {
+            transform: translateX(0);
+            opacity: 1;
+          }
+          to {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+        }
+
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.5;
+          }
+        }
+      `}</style>
         </div>
     );
 }

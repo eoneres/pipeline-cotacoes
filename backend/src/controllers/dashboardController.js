@@ -1,13 +1,28 @@
 const { prisma } = require('../config/database');
 const cotacaoService = require('../services/cotacaoService');
 const logger = require('../config/logger');
+const { cache } = require('../config/redis');
 
 class DashboardController {
     /**
      * Resumo geral do dashboard
      */
     async resumo(req, res, next) {
+        const cacheKey = 'dashboard:resumo';
+
         try {
+            // Tentar obter do cache
+            const cached = await cache.get(cacheKey);
+            if (cached) {
+                return res.json({
+                    success: true,
+                    data: cached,
+                    cached: true,
+                    timestamp: new Date().toISOString()
+                });
+            }
+
+            // Buscar dados
             const [totalCotacoes, moedas, ultimasColetas, estatisticasGerais] = await Promise.all([
                 prisma.cotacao.count(),
                 cotacaoService.buscarMoedasDisponiveis(),
@@ -18,9 +33,9 @@ class DashboardController {
                 this.calcularEstatisticasGerais()
             ]);
 
-            // Buscar cotações atuais para cada moeda
+            // Buscar cotações atuais
             const cotaçõesAtuais = {};
-            for (const moeda of moedas.slice(0, 5)) { // Limita a 5 moedas para performance
+            for (const moeda of moedas.slice(0, 5)) {
                 try {
                     const cotacao = await cotacaoService.buscarCotacaoAtual(moeda);
                     if (cotacao) {
@@ -36,16 +51,22 @@ class DashboardController {
                 }
             }
 
+            const data = {
+                total_cotacoes: totalCotacoes,
+                total_moedas: moedas.length,
+                moedas_disponiveis: moedas,
+                ultimas_coletas: ultimasColetas,
+                estatisticas_gerais: estatisticasGerais,
+                cotações_atuais: cotaçõesAtuais
+            };
+
+            // Salvar no cache por 60 segundos
+            await cache.set(cacheKey, data, 60);
+
             res.json({
                 success: true,
-                data: {
-                    total_cotacoes: totalCotacoes,
-                    total_moedas: moedas.length,
-                    moedas_disponiveis: moedas,
-                    ultimas_coletas: ultimasColetas,
-                    estatisticas_gerais: estatisticasGerais,
-                    cotações_atuais: cotaçõesAtuais
-                },
+                data: data,
+                cached: false,
                 timestamp: new Date().toISOString()
             });
         } catch (error) {

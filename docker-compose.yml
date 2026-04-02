@@ -1,6 +1,22 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: cotacoes-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cotacoes-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   postgres:
     image: postgres:15-alpine
     container_name: cotacoes-postgres
@@ -28,11 +44,15 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://cotacoes_user:cotacoes_pass@postgres:5432/cotacoes_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       PORT: 3001
     ports:
       - "3001:3001"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - ./backend:/app
@@ -55,6 +75,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
 
 
 networks:

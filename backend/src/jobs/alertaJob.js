@@ -2,11 +2,10 @@ const cron = require('node-cron');
 const alertaService = require('../services/alertaService');
 const logger = require('../config/logger');
 
-class AlertaJob {
-    constructor() {
-        this.schedule = '*/1 * * * *';
-        this.isRunning = false;
-    }
+const alertaJob = {
+    schedule: '*/1 * * * *',
+    isRunning: false,
+    task: null,
 
     start() {
         if (this.schedule && this.schedule !== '') {
@@ -17,6 +16,8 @@ class AlertaJob {
                 this.isRunning = true;
                 try {
                     await alertaService.verificarAlertas();
+                } catch (error) {
+                    logger.error('Erro no job de alertas:', error);
                 } finally {
                     this.isRunning = false;
                 }
@@ -24,7 +25,7 @@ class AlertaJob {
 
             logger.info('✅ Job de alertas agendado com sucesso');
         }
-    }
+    },
 
     stop() {
         if (this.task) {
@@ -32,6 +33,6 @@ class AlertaJob {
             logger.info('⏹️ Job de alertas parado');
         }
     }
-}
+};
 
-module.exports = new AlertaJob();
+module.exports = alertaJob;

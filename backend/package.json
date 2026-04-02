@@ -26,10 +26,13 @@
         "express": "^4.18.2",
         "express-validator": "^7.0.1",
         "helmet": "^7.1.0",
+        "ioredis": "^5.10.1",
         "json2csv": "^5.0.7",
         "morgan": "^1.10.0",
         "node-cron": "^3.0.3",
-        "nodemailer": "^6.9.7"
+        "nodemailer": "^6.9.7",
+        "redis": "^5.11.0",
+        "socket.io": "^4.8.3"
     },
     "devDependencies": {
         "@types/jest": "^29.5.8",
