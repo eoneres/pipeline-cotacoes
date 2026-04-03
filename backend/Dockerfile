@@ -18,5 +18,5 @@ COPY . .
 # Expor porta
 EXPOSE 3001
 
-# Comando para iniciar aplicação
+# Comando para iniciar
 CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

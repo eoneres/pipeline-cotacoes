@@ -24,6 +24,7 @@ const exportRoutes = require('./routes/exportRoutes');
 const forecastRoutes = require('./routes/forecastRoutes');
 const sentimentRoutes = require('./routes/sentimentRoutes');
 const cacheRoutes = require('./routes/cacheRoutes');
+const prophetRoutes = require('./routes/prophetRoutes');
 
 // Inicialização
 const app = express();
@@ -88,6 +89,7 @@ app.use('/api/export', exportRoutes);
 app.use('/api/forecast', forecastRoutes);
 app.use('/api/sentiment', sentimentRoutes);
 app.use('/api/cache', cacheRoutes);
+app.use('/api/prophet', prophetRoutes);
 
 // Rota /api/health para compatibilidade
 app.get('/api/health', (req, res) => {
