@@ -32,7 +32,6 @@ class ApiService {
             (error) => {
                 if (error.response) {
                     logger.error(`❌ API Response Error: ${error.response.status} - ${error.message}`);
-                    logger.error(`Response data:`, error.response.data);
                 } else {
                     logger.error(`❌ API Error: ${error.message}`);
                 }
@@ -41,8 +40,12 @@ class ApiService {
         );
     }
 
+    /**
+     * Busca cotações atuais - formato correto é com hífen (ex: USD-BRL)
+     */
     async getCotacoesAtuais(moedas) {
         try {
+            // Manter o formato original com hífen (ex: USD-BRL)
             const moedasStr = Array.isArray(moedas) ? moedas.join(',') : moedas;
             const url = `/last/${moedasStr}`;
             logger.debug(`Chamando API: ${url}`);
@@ -57,8 +60,12 @@ class ApiService {
         }
     }
 
+    /**
+     * Busca histórico de cotações
+     */
     async getHistoricoCotacoes(moeda, dias = 30) {
         try {
+            // Formato correto com hífen
             const response = await this.client.get(`/daily/${moeda}/${dias}`);
             return response.data;
         } catch (error) {

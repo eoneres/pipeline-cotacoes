@@ -6,7 +6,7 @@ const useWebSocket = (onMessage) => {
     const [lastMessage, setLastMessage] = useState(null);
     const socketRef = useRef(null);
     const reconnectAttemptsRef = useRef(0);
-    const maxReconnectAttempts = 10;
+    const maxReconnectAttempts = 5;
 
     useEffect(() => {
         // Função para conectar
@@ -19,13 +19,14 @@ const useWebSocket = (onMessage) => {
             console.log('🔌 Conectando ao WebSocket...');
 
             const socket = io('http://localhost:3001', {
-                transports: ['websocket'],
+                transports: ['websocket', 'polling'], // Tentar polling como fallback
                 reconnection: true,
                 reconnectionAttempts: maxReconnectAttempts,
                 reconnectionDelay: 1000,
                 reconnectionDelayMax: 5000,
-                timeout: 20000,
-                autoConnect: true
+                timeout: 10000,
+                autoConnect: true,
+                forceNew: true
             });
 
             socket.on('connect', () => {
@@ -38,7 +39,6 @@ const useWebSocket = (onMessage) => {
                 console.log('🔌 WebSocket desconectado. Razão:', reason);
                 setIsConnected(false);
 
-                // Se desconectado pelo servidor, tentar reconectar manualmente
                 if (reason === 'io server disconnect') {
                     setTimeout(() => {
                         if (socketRef.current && !socketRef.current.connected) {
@@ -55,7 +55,7 @@ const useWebSocket = (onMessage) => {
                 reconnectAttemptsRef.current++;
 
                 if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-                    console.error('❌ Máximo de tentativas de reconexão atingido');
+                    console.warn('⚠️ Máximo de tentativas de reconexão atingido. WebSocket pode estar indisponível.');
                 }
             });
 
@@ -92,7 +92,6 @@ const useWebSocket = (onMessage) => {
 
         connect();
 
-        // Cleanup - desconectar apenas quando o componente for desmontado
         return () => {
             if (socketRef.current) {
                 console.log('🔌 Desconectando WebSocket...');
@@ -100,7 +99,7 @@ const useWebSocket = (onMessage) => {
                 socketRef.current = null;
             }
         };
-    }, []); // Array vazio para executar apenas uma vez
+    }, []); // Array vazio
 
     const sendMessage = (event, data) => {
         if (socketRef.current && isConnected) {

@@ -4,6 +4,7 @@ import ForecastPanel from './components/ForecastPanel';
 import PriceChart from './components/PriceChart';
 import PerformanceMetrics from './components/PerformanceMetrics';
 import WebSocketStatus from './components/WebSocketStatus';
+import SentimentAnalysis from './components/SentimentAnalysis';
 import useWebSocket from './hooks/useWebSocket';
 import {
     formatBRL,
@@ -34,7 +35,6 @@ function App() {
     // WebSocket para atualizações em tempo real
     const handleWebSocketMessage = (message) => {
         if (message.tipo === 'nova_cotacao') {
-            // Atualizar a cotação específica
             const novaCotacao = message.dados;
             setDados(prev => ({
                 ...prev,
@@ -51,7 +51,6 @@ function App() {
                 }
             }));
 
-            // Mostrar notificação visual
             const variacao = novaCotacao.pctChange;
             const sinal = variacao >= 0 ? '▲' : '▼';
             const cor = variacao >= 0 ? '#10b981' : '#ef4444';
@@ -83,7 +82,6 @@ function App() {
                 setTimeout(() => notification.remove(), 300);
             }, 5000);
         } else if (message.tipo === 'coleta_finalizada') {
-            // Recarregar dados após coleta
             carregarDados();
             carregarHistorico(selectedMoeda);
             carregarEstatisticas(selectedMoeda);
@@ -252,7 +250,6 @@ function App() {
                             <p style={{ margin: '5px 0 0', opacity: 0.9 }}>Monitoramento de moedas em tempo real</p>
                         </div>
                         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            {/* Indicador WebSocket */}
                             <div style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -560,6 +557,12 @@ function App() {
                                 })}
                             </div>
                         </div>
+
+                        {/* Análise de Sentimento */}
+                        <SentimentAnalysis
+                            moeda={selectedMoeda}
+                            cotacaoAtual={dados.cotacoes[selectedMoeda]?.bid}
+                        />
 
                         {/* Estatísticas Cards */}
                         {estatisticas && (

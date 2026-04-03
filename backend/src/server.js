@@ -4,13 +4,16 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
+const path = require('path');
 const http = require('http');
 const socketIo = require('socket.io');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
 const { prisma } = require('./config/database');
+const { connectRedis, cache } = require('./config/redis');
 const logger = require('./config/logger');
 const coletaJob = require('./jobs/coletaJob');
 const alertaJob = require('./jobs/alertaJob');
-const { connectRedis, cache } = require('./config/redis');
 
 // Importação das rotas
 const cotacaoRoutes = require('./routes/cotacaoRoutes');
@@ -19,6 +22,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const alertaRoutes = require('./routes/alertaRoutes');
 const exportRoutes = require('./routes/exportRoutes');
 const forecastRoutes = require('./routes/forecastRoutes');
+const sentimentRoutes = require('./routes/sentimentRoutes');
 const cacheRoutes = require('./routes/cacheRoutes');
 
 // Inicialização
@@ -47,6 +51,34 @@ app.use((req, res, next) => {
     next();
 });
 
+// ============= SWAGGER DOCUMENTATION =============
+
+// Swagger UI - Documentação da API
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    explorer: true,
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'Pipeline de Cotações API - Documentação',
+    swaggerOptions: {
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        filter: true,
+        tryItOutEnabled: true
+    }
+}));
+
+// Rota para JSON do Swagger
+app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+});
+
+// Servir página HTML da documentação
+app.get('/docs', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'docs.html'));
+});
+
+// ============= ROTAS DA API =============
+
 // Rotas
 app.use('/api/cotacoes', cotacaoRoutes);
 app.use('/api/coletas', coletaRoutes);
@@ -54,6 +86,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/alertas', alertaRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/forecast', forecastRoutes);
+app.use('/api/sentiment', sentimentRoutes);
 app.use('/api/cache', cacheRoutes);
 
 // Rota /api/health para compatibilidade
@@ -63,7 +96,12 @@ app.get('/api/health', (req, res) => {
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         environment: process.env.NODE_ENV,
-        version: '1.0.0'
+        version: '1.0.0',
+        services: {
+            database: 'connected',
+            redis: require('./config/redis').isRedisReady(),
+            websocket: 'online'
+        }
     });
 });
 
@@ -73,6 +111,8 @@ app.get('/api', (req, res) => {
         name: 'Pipeline de Cotações API',
         version: '1.0.0',
         status: 'online',
+        documentation: '/api-docs',
+        documentation_html: '/docs',
         endpoints: {
             health: '/api/health',
             cotacoes: '/api/cotacoes',
@@ -80,11 +120,14 @@ app.get('/api', (req, res) => {
             dashboard: '/api/dashboard',
             alertas: '/api/alertas',
             export: '/api/export',
-            forecast: '/api/forecast'
+            forecast: '/api/forecast',
+            sentiment: '/api/sentiment',
+            cache: '/api/cache'
         },
         websocket: {
             status: 'online',
-            endpoint: 'ws://localhost:3001'
+            endpoint: 'ws://localhost:3001',
+            events: ['nova_cotacao', 'coleta_finalizada', 'alerta_disparado']
         },
         timestamp: new Date().toISOString()
     });
@@ -95,21 +138,29 @@ app.get('/', (req, res) => {
     res.json({
         name: 'Pipeline de Cotações API',
         version: '1.0.0',
+        description: 'API para monitoramento, análise e previsão de cotações de moedas',
+        documentation: '/api-docs',
+        documentation_html: '/docs',
         endpoints: {
             health: '/health',
             api: '/api',
+            docs: '/api-docs',
             cotacoes: '/api/cotacoes',
             coletas: '/api/coletas',
             dashboard: '/api/dashboard',
             alertas: '/api/alertas',
             export: '/api/export',
-            forecast: '/api/forecast'
+            forecast: '/api/forecast',
+            sentiment: '/api/sentiment',
+            cache: '/api/cache'
         },
         websocket: {
             status: 'online',
             endpoint: 'ws://localhost:3001',
             events: ['nova_cotacao', 'coleta_finalizada', 'alerta_disparado']
-        }
+        },
+        github: 'https://github.com/seu-usuario/pipeline-cotacoes',
+        timestamp: new Date().toISOString()
     });
 });
 
@@ -118,6 +169,7 @@ app.use((err, req, res, next) => {
     logger.error('Erro não tratado:', err);
 
     res.status(err.status || 500).json({
+        success: false,
         error: {
             message: err.message || 'Erro interno do servidor',
             status: err.status || 500,
@@ -133,13 +185,15 @@ const connectedClients = new Set();
 
 io.on('connection', (socket) => {
     connectedClients.add(socket.id);
-    logger.info(`🔌 Cliente conectado: ${socket.id} | Total: ${connectedClients.size}`);
+    // Log reduzido para não poluir o terminal
+    // logger.debug(`🔌 Cliente conectado: ${socket.id} | Total: ${connectedClients.size}`);
 
     // Enviar boas-vindas
     socket.emit('welcome', {
         message: 'Conectado ao Pipeline de Cotações WebSocket',
         timestamp: new Date().toISOString(),
-        clientId: socket.id
+        clientId: socket.id,
+        events: ['nova_cotacao', 'coleta_finalizada', 'alerta_disparado']
     });
 
     // Cliente pode solicitar dados específicos
@@ -156,7 +210,7 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         connectedClients.delete(socket.id);
-        logger.info(`🔌 Cliente desconectado: ${socket.id} | Total: ${connectedClients.size}`);
+        // logger.debug(`🔌 Cliente desconectado: ${socket.id} | Total: ${connectedClients.size}`);
     });
 });
 
@@ -242,6 +296,8 @@ async function startServer() {
       🚀 Servidor rodando!
       📡 HTTP: http://localhost:${PORT}
       🔌 WebSocket: ws://localhost:${PORT}
+      📚 Documentação: http://localhost:${PORT}/api-docs
+      📄 Documentação HTML: http://localhost:${PORT}/docs
       💾 Redis: ${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}
       🌍 Ambiente: ${process.env.NODE_ENV}
       📅 Iniciado em: ${new Date().toISOString()}
@@ -260,6 +316,9 @@ process.on('SIGINT', async () => {
     alertaJob.stop();
     io.close();
     await prisma.$disconnect();
+    if (require('./config/redis').isRedisReady()) {
+        await require('./config/redis').disconnectRedis();
+    }
     process.exit(0);
 });
 
@@ -269,10 +328,13 @@ process.on('SIGTERM', async () => {
     alertaJob.stop();
     io.close();
     await prisma.$disconnect();
+    if (require('./config/redis').isRedisReady()) {
+        await require('./config/redis').disconnectRedis();
+    }
     process.exit(0);
 });
 
 // Iniciar aplicação
 startServer();
 
-module.exports = { app, server, io };
+module.exports = { app, server, io, emitirNovaCotacao, emitirColetaFinalizada, emitirAlerta };

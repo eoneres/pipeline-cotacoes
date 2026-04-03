@@ -6,12 +6,13 @@ const logger = require('../config/logger');
 const coletaJob = {
     isRunning: false,
     schedule: process.env.COLETA_CRON_SCHEDULE || '*/5 * * * *',
-    moedas: (process.env.MOEDAS || 'USD-BRL,EUR-BRL').split(','),
+    moedas: (process.env.MOEDAS || 'USD-BRL,EUR-BRL,GBP-BRL,ARS-BRL').split(','),
     task: null,
 
     start() {
         if (this.schedule && this.schedule !== '') {
             logger.info(`🔄 Iniciando job de coleta com schedule: ${this.schedule}`);
+            logger.info(`📊 Moedas monitoradas: ${this.moedas.join(', ')}`);
 
             this.task = cron.schedule(this.schedule, async () => {
                 await this.executarColeta();
@@ -45,21 +46,56 @@ const coletaJob = {
         logger.info(`🚀 Iniciando coleta de cotações para ${this.moedas.join(', ')}`);
 
         const logId = await this.criarLogInicio();
+        let totalSalvos = 0;
 
         try {
-            const resultados = await this.coletarTodasMoedas();
-            logger.info(`📊 Resultados obtidos: ${resultados.length} cotações`);
+            // Buscar todas as moedas de uma vez (API suporta múltiplas)
+            const moedasStr = this.moedas.join(',');
+            const dados = await apiService.getCotacoesAtuais(moedasStr);
 
-            if (resultados.length > 0) {
-                const salvos = await this.salvarResultados(resultados);
-                await this.atualizarLogSucesso(logId, salvos);
+            if (dados) {
+                for (const moeda of this.moedas) {
+                    const chaveResposta = moeda.replace('-', '');
 
-                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-                logger.info(`✅ Coleta finalizada com sucesso! ${salvos} registros salvos em ${duration}s`);
-            } else {
-                logger.warn('⚠️ Nenhum dado foi coletado da API');
-                await this.atualizarLogSucesso(logId, 0);
+                    if (dados[chaveResposta]) {
+                        const cotacao = dados[chaveResposta];
+                        const timestamp = new Date(parseInt(cotacao.timestamp) * 1000);
+
+                        const resultado = {
+                            moeda: moeda,
+                            bid: parseFloat(cotacao.bid),
+                            ask: parseFloat(cotacao.ask),
+                            high: parseFloat(cotacao.high),
+                            low: parseFloat(cotacao.low),
+                            varBid: parseFloat(cotacao.varBid),
+                            pctChange: parseFloat(cotacao.pctChange),
+                            timestamp: timestamp
+                        };
+
+                        // Salvar no banco
+                        await prisma.cotacao.upsert({
+                            where: {
+                                moeda_timestamp: {
+                                    moeda: resultado.moeda,
+                                    timestamp: resultado.timestamp
+                                }
+                            },
+                            update: resultado,
+                            create: resultado
+                        });
+
+                        logger.info(`✅ Cotação ${moeda} salva: Bid=${resultado.bid}, Ask=${resultado.ask}`);
+                        totalSalvos++;
+                    } else {
+                        logger.warn(`⚠️ Dados não encontrados para ${moeda}`);
+                    }
+                }
             }
+
+            await this.atualizarLogSucesso(logId, totalSalvos);
+
+            const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+            logger.info(`✅ Coleta finalizada! ${totalSalvos} moedas salvas em ${duration}s`);
 
         } catch (error) {
             logger.error(`❌ Erro na coleta: ${error.message}`);
@@ -67,72 +103,6 @@ const coletaJob = {
         } finally {
             this.isRunning = false;
         }
-    },
-
-    async coletarTodasMoedas() {
-        const resultados = [];
-
-        for (const moeda of this.moedas) {
-            try {
-                logger.debug(`🌐 Coletando cotação para ${moeda}`);
-                const dados = await apiService.getCotacoesAtuais(moeda);
-
-                if (dados && dados[moeda]) {
-                    const cotacao = dados[moeda];
-                    const timestamp = new Date(parseInt(cotacao.timestamp) * 1000);
-
-                    const resultado = {
-                        moeda: moeda,
-                        bid: parseFloat(cotacao.bid),
-                        ask: parseFloat(cotacao.ask),
-                        high: parseFloat(cotacao.high),
-                        low: parseFloat(cotacao.low),
-                        varBid: parseFloat(cotacao.varBid),
-                        pctChange: parseFloat(cotacao.pctChange),
-                        timestamp: timestamp
-                    };
-
-                    resultados.push(resultado);
-                    logger.info(`✅ Cotação ${moeda} coletada: Bid=${resultado.bid}, Ask=${resultado.ask}`);
-                } else {
-                    logger.warn(`⚠️ Dados inválidos para ${moeda}:`, dados);
-                }
-            } catch (error) {
-                logger.error(`❌ Erro ao coletar ${moeda}: ${error.message}`);
-            }
-        }
-
-        return resultados;
-    },
-
-    async salvarResultados(resultados) {
-        let salvos = 0;
-
-        for (const resultado of resultados) {
-            try {
-                const exists = await prisma.cotacao.findFirst({
-                    where: {
-                        moeda: resultado.moeda,
-                        timestamp: resultado.timestamp
-                    }
-                });
-
-                if (!exists) {
-                    await prisma.cotacao.create({
-                        data: resultado
-                    });
-                    salvos++;
-                    logger.debug(`💾 Salvo: ${resultado.moeda} - ${resultado.bid}`);
-                } else {
-                    logger.debug(`⏭️ Duplicado: ${resultado.moeda} - ${resultado.timestamp}`);
-                }
-            } catch (error) {
-                logger.error(`❌ Erro ao salvar ${resultado.moeda}: ${error.message}`);
-            }
-        }
-
-        logger.info(`💾 Salvos: ${salvos} de ${resultados.length}`);
-        return salvos;
     },
 
     async criarLogInicio() {
